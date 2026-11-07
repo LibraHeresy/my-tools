@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import {
   Check,
   FileWarning,
   LoaderCircle,
-  Maximize2,
 } from "lucide-react";
 import { GROUP_COLORS } from "../../lib/groupColors";
 import { PageLightbox } from "./PageLightbox";
@@ -37,7 +37,7 @@ interface PageThumbnailProps {
   selected: boolean;
   onToggle: () => void;
   onOpenPreview: () => void;
-  onHoverPreview?: (source: string, rect: DOMRect) => void;
+  onHoverPreview?: (pageNumber: number, rect: DOMRect) => void;
   onHoverEnd: () => void;
 }
 
@@ -188,25 +188,16 @@ function PageThumbnail({
     }
 
     hoverTimerRef.current = window.setTimeout(() => {
-      const canvas = canvasRef.current;
       const frame = frameRef.current;
-      if (!canvas || !frame) {
+      if (!frame) {
         return;
       }
-      try {
-        onHoverPreview(canvas.toDataURL("image/png"), frame.getBoundingClientRect());
-      } catch {
-        // Tainted canvas is not expected here; hover preview is optional.
-      }
+      onHoverPreview(pageNumber, frame.getBoundingClientRect());
     }, 420);
   };
 
   const activate = () => {
-    if (selectable) {
-      onToggle();
-    } else {
-      onOpenPreview();
-    }
+    onOpenPreview();
   };
 
   const title = group
@@ -224,14 +215,9 @@ function PageThumbnail({
           aspectRatio: String(aspect),
           borderColor,
         }}
-        role={selectable ? "checkbox" : "button"}
+        role="button"
         tabIndex={0}
-        aria-checked={selectable ? selected : undefined}
-        aria-label={
-          selectable
-            ? `第 ${pageNumber} 页，${selected ? "已选中" : "未选中"}`
-            : `查看第 ${pageNumber} 页大图`
-        }
+        aria-label={`查看第 ${pageNumber} 页大图`}
         onClick={activate}
         onKeyDown={(event) => {
           if (event.target !== event.currentTarget) {
@@ -261,25 +247,23 @@ function PageThumbnail({
         ) : null}
 
         {selectable ? (
-          <span
+          <button
+            type="button"
             className={`page-select-indicator ${selected ? "is-checked" : ""}`}
-            aria-hidden="true"
+            aria-label={
+              selected
+                ? `取消选中第 ${pageNumber} 页`
+                : `选中第 ${pageNumber} 页`
+            }
+            aria-pressed={selected}
+            onClick={(event) => {
+              event.stopPropagation();
+              onToggle();
+            }}
           >
             {selected ? <Check size={11} strokeWidth={3} /> : null}
-          </span>
+          </button>
         ) : null}
-
-        <button
-          type="button"
-          className="page-zoom-button"
-          aria-label={`查看第 ${pageNumber} 页大图`}
-          onClick={(event) => {
-            event.stopPropagation();
-            onOpenPreview();
-          }}
-        >
-          <Maximize2 size={12} />
-        </button>
 
         <span
           className="page-thumb-number"
@@ -308,9 +292,88 @@ function PageThumbnail({
 }
 
 interface HoverPreview {
-  source: string;
+  pageNumber: number;
   left: number;
   top: number;
+}
+
+function HoverPageCanvas({
+  pdf,
+  pageNumber,
+}: {
+  pdf: PDFDocumentProxy;
+  pageNumber: number;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [state, setState] = useState<RenderState>("rendering");
+
+  useEffect(() => {
+    let disposed = false;
+    let renderTask: { cancel: () => void } | null = null;
+    setState("rendering");
+
+    void scheduleRender(async () => {
+      if (disposed) {
+        return;
+      }
+      const page = await pdf.getPage(pageNumber);
+      if (disposed) {
+        return;
+      }
+      const baseViewport = page.getViewport({ scale: 1 });
+      const cssWidth = 438;
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const viewport = page.getViewport({
+        scale: (cssWidth * dpr) / baseViewport.width,
+      });
+      const canvas = canvasRef.current;
+      if (!canvas) {
+        return;
+      }
+      canvas.width = Math.max(1, Math.floor(viewport.width));
+      canvas.height = Math.max(1, Math.floor(viewport.height));
+      renderTask = page.render({
+        canvas,
+        viewport,
+        background: "#fffdf8",
+      });
+      await (renderTask as unknown as { promise: Promise<void> }).promise;
+      if (!disposed) {
+        setState("done");
+      }
+    }).catch((error: unknown) => {
+      if (
+        !disposed &&
+        !(error instanceof Error && error.name === "RenderingCancelledException")
+      ) {
+        setState("error");
+      }
+    });
+
+    return () => {
+      disposed = true;
+      renderTask?.cancel();
+    };
+  }, [pageNumber, pdf]);
+
+  return (
+    <div className="page-hover-canvas-wrap">
+      {state !== "done" ? (
+        <div className="page-hover-placeholder">
+          {state === "error" ? (
+            <FileWarning size={20} />
+          ) : (
+            <LoaderCircle size={18} className="spin" />
+          )}
+        </div>
+      ) : null}
+      <canvas
+        ref={canvasRef}
+        className="page-hover-canvas"
+        style={{ opacity: state === "done" ? 1 : 0 }}
+      />
+    </div>
+  );
 }
 
 export function PagePreview({
@@ -324,6 +387,26 @@ export function PagePreview({
 }: PagePreviewProps) {
   const [lightboxPage, setLightboxPage] = useState<number | null>(null);
   const [hoverPreview, setHoverPreview] = useState<HoverPreview | null>(null);
+  const hoverCloseTimerRef = useRef<number | null>(null);
+
+  const clearHoverClose = () => {
+    if (hoverCloseTimerRef.current !== null) {
+      window.clearTimeout(hoverCloseTimerRef.current);
+      hoverCloseTimerRef.current = null;
+    }
+  };
+
+  const scheduleHoverClose = () => {
+    clearHoverClose();
+    hoverCloseTimerRef.current = window.setTimeout(() => {
+      setHoverPreview(null);
+      hoverCloseTimerRef.current = null;
+    }, 140);
+  };
+
+  useEffect(() => {
+    return () => clearHoverClose();
+  }, []);
 
   const pageGroups = useMemo(() => {
     const map = new Map<number, PreviewGroup>();
@@ -343,10 +426,14 @@ export function PagePreview({
   useEffect(() => {
     setLightboxPage(null);
     setHoverPreview(null);
+    clearHoverClose();
   }, [pageCount, pdf]);
 
   useEffect(() => {
-    const clearHover = () => setHoverPreview(null);
+    const clearHover = () => {
+      clearHoverClose();
+      setHoverPreview(null);
+    };
     window.addEventListener("scroll", clearHover, true);
     return () => window.removeEventListener("scroll", clearHover, true);
   }, []);
@@ -356,8 +443,10 @@ export function PagePreview({
     setLightboxPage(pageNumber);
   };
 
-  const showHoverPreview = (source: string, rect: DOMRect) => {
-    const width = 300;
+  const showHoverPreview = (pageNumber: number, rect: DOMRect) => {
+    clearHoverClose();
+    const width = 450;
+    const maxHeight = Math.min(660, window.innerHeight - 32);
     const gap = 16;
     let left = rect.right + gap;
     if (left + width > window.innerWidth - 16) {
@@ -366,16 +455,24 @@ export function PagePreview({
     left = Math.max(16, Math.min(left, window.innerWidth - width - 16));
     const top = Math.max(
       16,
-      Math.min(rect.top, window.innerHeight - 440),
+      Math.min(rect.top, window.innerHeight - maxHeight - 16),
     );
-    setHoverPreview({ source, left, top });
+    setHoverPreview({ pageNumber, left, top });
   };
 
   const selectedCount = selectedPages?.size ?? 0;
 
   return (
     <>
-      <section className="preview-panel" aria-labelledby="preview-title">
+      <section
+        className="preview-panel"
+        aria-labelledby="preview-title"
+        style={
+          {
+            "--preview-columns": Math.min(Math.max(pageCount, 1), 6),
+          } as CSSProperties
+        }
+      >
         <header className="preview-head">
           <div>
             <span className="panel-kicker">预览</span>
@@ -412,10 +509,8 @@ export function PagePreview({
                 selected={selectedPages?.has(pageNumber) ?? false}
                 onToggle={() => onTogglePage?.(pageNumber)}
                 onOpenPreview={() => openPreview(pageNumber)}
-                onHoverPreview={
-                  selectable ? undefined : showHoverPreview
-                }
-                onHoverEnd={() => setHoverPreview(null)}
+                onHoverPreview={showHoverPreview}
+                onHoverEnd={scheduleHoverClose}
               />
             ))}
           </div>
@@ -425,7 +520,7 @@ export function PagePreview({
           <span className="preview-foot-dot" />
           <span>
             {selectable
-              ? "点击页面选择；右上角图标可查看大图"
+              ? "点击页面查看大图；点击左上角选择"
               : footerText}
           </span>
         </footer>
@@ -436,9 +531,40 @@ export function PagePreview({
             <div
               className="page-hover-preview"
               style={{ left: hoverPreview.left, top: hoverPreview.top }}
-              aria-hidden="true"
+              onMouseEnter={clearHoverClose}
+              onMouseLeave={scheduleHoverClose}
+              onClick={() => openPreview(hoverPreview.pageNumber)}
+              role="group"
+              aria-label={`第 ${hoverPreview.pageNumber} 页预览`}
             >
-              <img src={hoverPreview.source} alt="" />
+              <HoverPageCanvas pdf={pdf} pageNumber={hoverPreview.pageNumber} />
+              {selectable ? (
+                <button
+                  type="button"
+                  className={`page-hover-select ${
+                    selectedPages?.has(hoverPreview.pageNumber)
+                      ? "is-checked"
+                      : ""
+                  }`}
+                  aria-label={
+                    selectedPages?.has(hoverPreview.pageNumber)
+                      ? `取消选中第 ${hoverPreview.pageNumber} 页`
+                      : `选中第 ${hoverPreview.pageNumber} 页`
+                  }
+                  aria-pressed={selectedPages?.has(hoverPreview.pageNumber)}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onTogglePage?.(hoverPreview.pageNumber);
+                  }}
+                >
+                  {selectedPages?.has(hoverPreview.pageNumber) ? (
+                    <Check size={14} strokeWidth={3} />
+                  ) : null}
+                </button>
+              ) : null}
+              <span className="page-hover-label">
+                第 {hoverPreview.pageNumber} 页
+              </span>
             </div>,
             document.body,
           )
@@ -451,6 +577,9 @@ export function PagePreview({
               initialPage={lightboxPage}
               pageCount={pageCount}
               onClose={() => setLightboxPage(null)}
+              selectable={selectable}
+              selectedPages={selectedPages}
+              onTogglePage={onTogglePage}
             />,
             document.body,
           )

@@ -16,6 +16,10 @@ export const openSheet = (path: string) => invoke<SheetInfo>('open_sheet', { pat
 export const detectSprites = (opts: DetectOptions) =>
   invoke<SpriteRect[]>('detect_sprites', { opts })
 
+/** 递归展开文件夹中的图片，供合成图集使用。 */
+export const listImages = (inputs: string[]) =>
+  invoke<string[]>('list_images', { inputs })
+
 /**
  * 导出切图。
  *

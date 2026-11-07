@@ -20,9 +20,10 @@ import {
 } from 'lucide-react'
 import { useHashRoute } from '../../lib/router'
 import { truncateMiddle } from '../../lib/format'
+import { ImageLightbox, type ImageLightboxItem } from '../../components/ImageLightbox'
 import { SpriteCanvas } from './components/SpriteCanvas'
 import { JobPanel, type JobState } from './components/JobPanel'
-import { detectSprites, exportSprites, openSheet, packImages, previewPack, repackSheet } from './api'
+import { detectSprites, exportSprites, listImages, openSheet, packImages, previewPack, repackSheet } from './api'
 import {
   DEFAULT_EXPORT_OPTIONS,
   DEFAULT_OPTIONS,
@@ -251,9 +252,9 @@ function HoverSprite({ imageUrl, sprite }: { imageUrl: string; sprite: SpriteRec
   )
 }
 
-function App() {
+function App({ forcedMode }: { forcedMode?: 'slice' | 'pack' }) {
   const { navigate } = useHashRoute()
-  const [mode, setMode] = useState<'slice' | 'pack'>('slice')
+  const [mode, setMode] = useState<'slice' | 'pack'>(forcedMode ?? 'slice')
   const [sheet, setSheet] = useState<SheetInfo | null>(null)
   const [imageUrl, setImageUrl] = useState<string | null>(null)
   const [sprites, setSprites] = useState<SpriteRect[]>([])
@@ -285,6 +286,7 @@ function App() {
     x: number
     y: number
   } | null>(null)
+  const [packLightboxIndex, setPackLightboxIndex] = useState<number | null>(null)
   const [savedPresets, setSavedPresets] = useState<SavedDetectPreset[]>(loadSavedPresets)
   const [presetName, setPresetName] = useState('')
 
@@ -292,8 +294,7 @@ function App() {
   const dropRunner = useRef<(inputs: string[]) => void>(() => {})
   dropRunner.current = (inputs: string[]) => {
     if (mode === 'pack') {
-      addPackInputs(inputs)
-      setMessage(`已添加 ${inputs.length} 个输入到合成列表。`)
+      void addPackPaths(inputs)
       return
     }
     if (
@@ -483,6 +484,20 @@ function App() {
     setError(null)
   }
 
+  async function addPackPaths(paths: string[]) {
+    try {
+      const images = await listImages(paths)
+      if (images.length === 0) {
+        setError('所选文件夹里没有可用图片。')
+        return
+      }
+      addPackInputs(images)
+      setMessage(`已添加 ${images.length} 张图片到合成列表。`)
+    } catch (e) {
+      setError(String(e))
+    }
+  }
+
   async function handleAddPackFiles() {
     const inputs = await pickFiles('选择要合成图集的图片（可多选）')
     if (!inputs) return
@@ -493,8 +508,7 @@ function App() {
   async function handleAddPackFolders() {
     const dirs = await pickDirs('选择要合成图集的文件夹（可多选，含子文件夹）')
     if (!dirs) return
-    addPackInputs(dirs)
-    setMessage(`已添加 ${dirs.length} 个输入到合成列表。`)
+    await addPackPaths(dirs)
   }
 
   function handleClearPackInputs() {
@@ -644,11 +658,23 @@ function App() {
   }
 
   const switchMode = (next: 'slice' | 'pack') => {
-    if (job?.running) return
+    if (job?.running || forcedMode) return
     setMode(next)
     setError(null)
     setMessage(null)
   }
+
+  const pageTitle = mode === 'pack' ? '合成图集' : '精灵图切图'
+  const pageDescription =
+    mode === 'pack'
+      ? '把多张图片装箱合成图集，生成 PNG 和 TexturePacker JSON。'
+      : '自动识别 PNG 精灵图集，切分并导出逐张精灵和 TexturePacker JSON。'
+  const packLightboxPaths = packInputs.filter(isImagePath)
+  const packLightboxItems: ImageLightboxItem[] = packLightboxPaths.map((path) => ({
+    src: convertFileSrc(path),
+    name: pathName(path),
+    checker: true,
+  }))
 
   return (
     <div className={`tool-page sprite-page ${sheet || packInputs.length > 0 ? 'has-file' : ''}`}>
@@ -663,7 +689,7 @@ function App() {
           全部工具
         </button>
         <span className="breadcrumb-slash">/</span>
-        <span className="breadcrumb-current">精灵图工具</span>
+        <span className="breadcrumb-current">{pageTitle}</span>
         <span className="topbar-spacer" />
         <span className="local-chip">
           <ShieldCheck size={14} />
@@ -674,8 +700,8 @@ function App() {
       <header className="tool-heading">
         <div>
           <span className="eyebrow">素材</span>
-          <h1>精灵图工具</h1>
-          <p>识别图集里的精灵并切图，或把多张图片合成一张图集。</p>
+          <h1>{pageTitle}</h1>
+          <p>{pageDescription}</p>
         </div>
         {mode === 'slice' && sheet ? (
           <span className="loaded-chip">
@@ -690,36 +716,38 @@ function App() {
         ) : null}
       </header>
 
-      <div className="sprite-mode-switch" role="tablist" aria-label="精灵图工具模式">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={mode === 'slice'}
-          className={`sprite-mode-tab ${mode === 'slice' ? 'is-active' : ''}`}
-          onClick={() => switchMode('slice')}
-          disabled={Boolean(job?.running)}
-        >
-          <Scissors size={17} />
-          <span>
-            <strong>切图</strong>
-            <small>识别图集并导出精灵</small>
-          </span>
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={mode === 'pack'}
-          className={`sprite-mode-tab ${mode === 'pack' ? 'is-active' : ''}`}
-          onClick={() => switchMode('pack')}
-          disabled={Boolean(job?.running)}
-        >
-          <Package size={17} />
-          <span>
-            <strong>合成图集</strong>
-            <small>把多张图片装箱成图集</small>
-          </span>
-        </button>
-      </div>
+      {!forcedMode ? (
+        <div className="sprite-mode-switch" role="tablist" aria-label="精灵图工具模式">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mode === 'slice'}
+            className={`sprite-mode-tab ${mode === 'slice' ? 'is-active' : ''}`}
+            onClick={() => switchMode('slice')}
+            disabled={Boolean(job?.running)}
+          >
+            <Scissors size={17} />
+            <span>
+              <strong>切图</strong>
+              <small>识别图集并导出精灵</small>
+            </span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mode === 'pack'}
+            className={`sprite-mode-tab ${mode === 'pack' ? 'is-active' : ''}`}
+            onClick={() => switchMode('pack')}
+            disabled={Boolean(job?.running)}
+          >
+            <Package size={17} />
+            <span>
+              <strong>合成图集</strong>
+              <small>把多张图片装箱成图集</small>
+            </span>
+          </button>
+        </div>
+      ) : null}
 
       {error ? (
         <div className="inline-alert page-alert" role="alert">
@@ -1218,7 +1246,7 @@ function App() {
         )
       ) : (
         <>
-        <div className="sprite-slice-layout">
+        <div className="sprite-slice-layout sprite-pack-layout">
           <section className="sprite-canvas-panel sprite-pack-input-panel">
             <header className="sprite-panel-head">
               <div>
@@ -1277,7 +1305,9 @@ function App() {
                       选择文件夹
                     </button>
                   </div>
-                  <span className="sprite-pack-hint">支持 PNG</span>
+                  <span className="sprite-pack-hint">
+                    支持 PNG · 文件夹会自动展开为图片
+                  </span>
                 </div>
               ) : (
                 <div className="sprite-pack-thumb-grid">
@@ -1307,7 +1337,27 @@ function App() {
                         }}
                         onMouseLeave={() => setPackHover(null)}
                       >
-                        <span className="sprite-pack-thumb-media">
+                        <span
+                          className="sprite-pack-thumb-media"
+                          role={image ? 'button' : undefined}
+                          tabIndex={image ? 0 : undefined}
+                          title={image ? `查看 ${pathName(path)} 大图` : undefined}
+                          onClick={() => {
+                            if (!image) return
+                            setPackHover(null)
+                            const index = packLightboxPaths.indexOf(path)
+                            if (index >= 0) setPackLightboxIndex(index)
+                          }}
+                          onKeyDown={(event) => {
+                            if (!image) return
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.preventDefault()
+                              setPackHover(null)
+                              const index = packLightboxPaths.indexOf(path)
+                              if (index >= 0) setPackLightboxIndex(index)
+                            }
+                          }}
+                        >
                           {image ? (
                             <img src={convertFileSrc(path)} alt="" />
                           ) : (
@@ -1333,7 +1383,7 @@ function App() {
             </div>
 
             <footer className="sprite-canvas-foot">
-              <span>悬浮图片可以看大图 · 点击右上角移除</span>
+              <span>悬浮看大图 · 点击图片放大 · 点击右上角移除</span>
               <span>{packInputs.length} 个输入</span>
             </footer>
           </section>
@@ -1653,6 +1703,14 @@ function App() {
 
         </>
       )}
+
+      {packLightboxIndex !== null && packLightboxItems.length > 0 ? (
+        <ImageLightbox
+          items={packLightboxItems}
+          initialIndex={packLightboxIndex}
+          onClose={() => setPackLightboxIndex(null)}
+        />
+      ) : null}
 
       <JobPanel job={job} onClose={() => setJob(null)} />
       {dragging && mode === 'pack' ? (

@@ -100,12 +100,16 @@ pub fn run() {
         .manage(sprite::commands::AppState {
             sheet: Mutex::new(None),
         })
+        .manage(image_png::PreviewState::default())
         .invoke_handler(tauri::generate_handler![
             prepare_import,
             open_folder,
             image_png::analyze_image,
             image_png::preview_image,
+            image_png::preview_image_full,
+            image_png::preview_images,
             image_png::convert_images,
+            image_png::list_images,
             sprite::commands::open_sheet,
             sprite::commands::detect_sprites,
             sprite::export::export_sprites,

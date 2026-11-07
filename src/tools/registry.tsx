@@ -10,7 +10,7 @@ import {
 import type { ToolManifest } from "./types";
 import { splitPdfTool } from "./split-pdf/manifest";
 import { imageToPngTool } from "./image-to-png/manifest";
-import { spriteSlicerTool } from "./sprite-slicer/manifest";
+import { spritePackTool, spriteSliceTool } from "./sprite-slicer/manifest";
 
 const plannedTools: ToolManifest[] = [
   {
@@ -72,7 +72,8 @@ const plannedTools: ToolManifest[] = [
 
 export const allTools: ToolManifest[] = [
   splitPdfTool,
-  spriteSlicerTool,
+  spriteSliceTool,
+  spritePackTool,
   imageToPngTool,
   ...plannedTools,
 ].sort((a, b) => a.order - b.order);
@@ -90,7 +91,12 @@ export const toolPages: Record<
   LazyExoticComponent<ComponentType>
 > = {
   [splitPdfTool.route]: lazy(() => import("./split-pdf/SplitPdfPage")),
-  [spriteSlicerTool.route]: lazy(() => import("./sprite-slicer/SpritePage")),
+  [spriteSliceTool.route]: lazy(
+    () => import("./sprite-slicer/SpriteSlicePage"),
+  ),
+  [spritePackTool.route]: lazy(
+    () => import("./sprite-slicer/SpritePackPage"),
+  ),
   [imageToPngTool.route]: lazy(() => import("./image-to-png/ImageToPngPage")),
 };
 

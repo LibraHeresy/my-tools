@@ -7,7 +7,6 @@ import {
   ArrowLeft,
   Check,
   Download,
-  Eye,
   FolderInput,
   ImagePlus,
   LoaderCircle,
@@ -16,13 +15,16 @@ import {
   X,
 } from 'lucide-react'
 import { useHashRoute } from '../../lib/router'
-import { analyzeImage, convertImages, previewImage } from './api'
+import { ImageLightbox, type ImageLightboxItem } from '../../components/ImageLightbox'
+import { analyzeImage, convertImages, listImages, previewImageFull, previewImages } from './api'
 import type {
   BackgroundCandidate,
+  BatchPreviewDone,
+  BatchPreviewItem,
+  BatchPreviewProgress,
   ConvertProgress,
   ConvertReport,
   ImageAnalysis,
-  PreviewResult,
   RemoveOptions,
 } from './types'
 import '../../styles/image-png.css'
@@ -30,10 +32,8 @@ import '../../styles/image-png.css'
 type Color = { r: number; g: number; b: number }
 
 const DEFAULT_COLOR: Color = { r: 255, g: 255, b: 255 }
-const DEFAULT_OPTIONS = {
-  tolerance: 24,
-  feather: 12,
-}
+const DEFAULT_TOLERANCE = 24
+const DEFAULT_FEATHER = 12
 
 function pickImages(): Promise<string[] | null> {
   return openDialog({
@@ -71,10 +71,6 @@ function pickDir(): Promise<string | null> {
 
 function fileName(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).pop() ?? path
-}
-
-function isImagePath(path: string): boolean {
-  return /\.(png|jpe?g|webp|bmp|gif)$/i.test(path)
 }
 
 function parentDir(path: string): string {
@@ -115,45 +111,37 @@ function removeOptions(
   tolerance: number,
   feather: number,
 ): RemoveOptions {
-  return {
-    mode,
-    color,
-    tolerance,
-    feather,
-  }
-}
-
-function ImagePreview({
-  src,
-  alt,
-  checker = true,
-}: {
-  src: string
-  alt: string
-  checker?: boolean
-}) {
-  return (
-    <div className={`image-png-image-frame ${checker ? 'is-checker' : ''}`}>
-      <img src={src} alt={alt} />
-    </div>
-  )
+  return { mode, color, tolerance, feather }
 }
 
 export default function ImageToPngPage() {
   const { navigate } = useHashRoute()
   const [inputs, setInputs] = useState<string[]>([])
-  const [selected, setSelected] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState<'input' | 'result'>('input')
   const [analysis, setAnalysis] = useState<ImageAnalysis | null>(null)
-  const [preview, setPreview] = useState<PreviewResult | null>(null)
-  const [showOriginal, setShowOriginal] = useState(false)
+  const [previews, setPreviews] = useState<Record<string, BatchPreviewItem>>({})
+  const [previewBusy, setPreviewBusy] = useState(false)
+  const [previewTotal, setPreviewTotal] = useState(0)
   const [mode, setMode] = useState<'uniform' | 'auto'>('uniform')
   const [color, setColor] = useState<Color>(DEFAULT_COLOR)
-  const [tolerance, setTolerance] = useState(DEFAULT_OPTIONS.tolerance)
-  const [feather, setFeather] = useState(DEFAULT_OPTIONS.feather)
+  const [tolerance, setTolerance] = useState(DEFAULT_TOLERANCE)
+  const [feather, setFeather] = useState(DEFAULT_FEATHER)
   const [outputDir, setOutputDir] = useState('')
-  const [previewBusy, setPreviewBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
+  const [hover, setHover] = useState<{
+    src: string
+    name: string
+    x: number
+    y: number
+  } | null>(null)
+  const [lightbox, setLightbox] = useState<{
+    kind: 'input' | 'result'
+    index: number
+  } | null>(null)
+  const [fullPreviews, setFullPreviews] = useState<Record<string, string>>({})
+  const fullPreviewEpoch = useRef(0)
+  const fullPreviewLoading = useRef<Set<string>>(new Set())
   const [job, setJob] = useState<{
     running: boolean
     done: number
@@ -162,49 +150,62 @@ export default function ImageToPngPage() {
   } | null>(null)
   const [report, setReport] = useState<ConvertReport | null>(null)
   const colorPicked = useRef(false)
+  const requestRef = useRef(0)
 
-  const addInputs = (paths: string[]) => {
-    setInputs((current) => {
-      const next = [...current]
-      for (const path of paths) {
-        if (!next.includes(path)) next.push(path)
+  const addInputs = async (paths: string[]) => {
+    try {
+      const images = await listImages(paths)
+      if (images.length === 0) {
+        setError('所选文件夹里没有可用图片。')
+        return
       }
-      return next
-    })
-    setError(null)
-    const firstImage = paths.find(isImagePath)
-    if (!selected && firstImage) setSelected(firstImage)
-    if (!outputDir && firstImage) setOutputDir(parentDir(firstImage))
+      setInputs((current) => {
+        const next = [...current]
+        for (const path of images) {
+          if (!next.includes(path)) next.push(path)
+        }
+        return next
+      })
+      setActiveTab('input')
+      setError(null)
+      if (!outputDir && images[0]) setOutputDir(parentDir(images[0]))
+    } catch (reason) {
+      setError(String(reason))
+    }
   }
 
   const handleAddImages = async () => {
     const picked = await pickImages()
-    if (picked) addInputs(picked)
+    if (picked) void addInputs(picked)
   }
 
   const handleAddFolders = async () => {
     const picked = await pickFolders()
-    if (picked) addInputs(picked)
+    if (picked) void addInputs(picked)
   }
 
   const handleClear = () => {
+    requestRef.current += 1
     setInputs([])
-    setSelected(null)
     setAnalysis(null)
-    setPreview(null)
+    setPreviews({})
+    setPreviewBusy(false)
+    setPreviewTotal(0)
     setReport(null)
     setError(null)
     setOutputDir('')
     colorPicked.current = false
     setColor(DEFAULT_COLOR)
+    setActiveTab('input')
   }
 
   const handleRemove = (path: string) => {
     setInputs((current) => current.filter((item) => item !== path))
-    if (selected === path) {
-      const next = inputs.find((item) => item !== path && isImagePath(item)) ?? null
-      setSelected(next)
-    }
+    setPreviews((current) => {
+      const next = { ...current }
+      delete next[path]
+      return next
+    })
   }
 
   const handleBack = () => {
@@ -213,13 +214,13 @@ export default function ImageToPngPage() {
   }
 
   useEffect(() => {
-    if (!selected) {
+    const first = inputs[0]
+    if (!first) {
       setAnalysis(null)
-      setPreview(null)
       return
     }
     let cancelled = false
-    void analyzeImage(selected)
+    void analyzeImage(first)
       .then((result) => {
         if (cancelled) return
         setAnalysis(result)
@@ -234,34 +235,76 @@ export default function ImageToPngPage() {
     return () => {
       cancelled = true
     }
-  }, [selected])
+  }, [inputs[0]])
 
   useEffect(() => {
-    if (!selected) return
-    let cancelled = false
-    const timer = window.setTimeout(async () => {
-      setPreviewBusy(true)
-      try {
-        const result = await previewImage(
-          selected,
-          removeOptions(mode, color, tolerance, feather),
-        )
-        if (!cancelled) setPreview(result)
-      } catch (reason) {
-        if (!cancelled) setError(String(reason))
-      } finally {
-        if (!cancelled) setPreviewBusy(false)
-      }
-    }, 220)
+    let disposed = false
+    const unlisteners: Array<() => void> = []
+
+    void listen<BatchPreviewProgress>('image-preview', (event) => {
+      const payload = event.payload
+      if (payload.requestId !== String(requestRef.current)) return
+      setPreviewTotal(payload.total)
+      setPreviews((current) => ({
+        ...current,
+        [payload.item.sourcePath]: payload.item,
+      }))
+    }).then((un) => {
+      if (disposed) un()
+      else unlisteners.push(un)
+    })
+
+    void listen<BatchPreviewDone>('image-preview-done', (event) => {
+      if (event.payload.requestId !== String(requestRef.current)) return
+      setPreviewTotal(event.payload.total)
+      setPreviewBusy(false)
+    }).then((un) => {
+      if (disposed) un()
+      else unlisteners.push(un)
+    })
+
     return () => {
-      cancelled = true
-      window.clearTimeout(timer)
+      disposed = true
+      unlisteners.forEach((un) => un())
     }
-  }, [selected, mode, color.r, color.g, color.b, tolerance, feather])
+  }, [])
+
+  useEffect(() => {
+    if (inputs.length === 0) {
+      setPreviews({})
+      setPreviewBusy(false)
+      setPreviewTotal(0)
+      return
+    }
+
+    const timer = window.setTimeout(() => {
+      const requestId = String(++requestRef.current)
+      setPreviews({})
+      setPreviewTotal(inputs.length)
+      setPreviewBusy(true)
+      void previewImages(
+        requestId,
+        inputs,
+        removeOptions(mode, color, tolerance, feather),
+      ).catch((reason) => {
+        if (String(requestRef.current) !== requestId) return
+        setPreviewBusy(false)
+        setError(String(reason))
+      })
+    }, 320)
+
+    return () => window.clearTimeout(timer)
+  }, [inputs, mode, color.r, color.g, color.b, tolerance, feather])
+
+  useEffect(() => {
+    fullPreviewEpoch.current += 1
+    fullPreviewLoading.current.clear()
+    setFullPreviews({})
+  }, [inputs, mode, color.r, color.g, color.b, tolerance, feather])
 
   useEffect(() => {
     const unlisteners: Array<() => void> = []
-    let cancelled = false
+    let disposed = false
 
     void listen<ConvertProgress>('image-progress', (event) => {
       const payload = event.payload
@@ -271,26 +314,27 @@ export default function ImageToPngPage() {
         total: payload.total,
         label: payload.name,
       })
-    }).then((handle) => {
-      if (cancelled) handle()
-      else unlisteners.push(handle)
+    }).then((un) => {
+      if (disposed) un()
+      else unlisteners.push(un)
     })
 
     void listen<ConvertReport>('image-done', (event) => {
-      setReport(event.payload)
+      const payload = event.payload
+      setReport(payload)
       setJob({
         running: false,
-        done: event.payload.total,
-        total: event.payload.total,
+        done: payload.total,
+        total: payload.total,
         label: '',
       })
-    }).then((handle) => {
-      if (cancelled) handle()
-      else unlisteners.push(handle)
+    }).then((un) => {
+      if (disposed) un()
+      else unlisteners.push(un)
     })
 
     return () => {
-      cancelled = true
+      disposed = true
       unlisteners.forEach((un) => un())
     }
   }, [])
@@ -302,12 +346,14 @@ export default function ImageToPngPage() {
           if (event.payload.type === 'over') setDragging(true)
           else if (event.payload.type === 'drop') {
             setDragging(false)
-            if (event.payload.paths.length > 0) addInputs(event.payload.paths)
+            if (event.payload.paths.length > 0) {
+              void addInputs(event.payload.paths)
+            }
           } else setDragging(false)
         }),
     )
     return () => {
-      void unlistenPromise.then((unlisten) => unlisten())
+      void unlistenPromise.then((un) => un())
     }
   }, [])
 
@@ -325,6 +371,20 @@ export default function ImageToPngPage() {
     if (next) setColorAndMark(next)
   }
 
+  const showHover = (
+    event: React.MouseEvent,
+    src: string,
+    name: string,
+  ) => {
+    setHover({ src, name, x: event.clientX, y: event.clientY })
+  }
+
+  const moveHover = (event: React.MouseEvent) => {
+    setHover((current) =>
+      current ? { ...current, x: event.clientX, y: event.clientY } : current,
+    )
+  }
+
   const handleStart = async () => {
     if (inputs.length === 0) {
       setError('请先添加要转换的图片或文件夹。')
@@ -340,7 +400,11 @@ export default function ImageToPngPage() {
     setReport(null)
     setJob({ running: true, done: 0, total: inputs.length, label: '' })
     try {
-      await convertImages(inputs, dir, removeOptions(mode, color, tolerance, feather))
+      await convertImages(
+        inputs,
+        dir,
+        removeOptions(mode, color, tolerance, feather),
+      )
     } catch (reason) {
       setError(String(reason))
       setJob(null)
@@ -351,13 +415,62 @@ export default function ImageToPngPage() {
     if (outputDir) void invoke('open_folder', { path: outputDir })
   }
 
-  const selectedPreview = showOriginal
-    ? selected && isImagePath(selected)
-      ? convertFileSrc(selected)
-      : null
-    : preview
-      ? convertFileSrc(preview.path)
-      : null
+  const previewCount = Object.keys(previews).length
+  const inputLightboxItems: ImageLightboxItem[] = inputs.map((path) => ({
+    src: convertFileSrc(path),
+    name: fileName(path),
+    checker: true,
+  }))
+  const resultLightboxPaths = inputs.filter(
+    (path) => previews[path]?.previewPath,
+  )
+  const resultLightboxItems: ImageLightboxItem[] = resultLightboxPaths.map(
+    (path) => {
+      const item = previews[path]
+      return {
+        src: convertFileSrc(fullPreviews[path] ?? (item.previewPath as string)),
+        name: fileName(path),
+        meta: item.background?.hex,
+        checker: true,
+      }
+    },
+  )
+  const loadFullPreview = (path: string) => {
+    if (fullPreviews[path] || fullPreviewLoading.current.has(path)) return
+    fullPreviewLoading.current.add(path)
+    const epoch = fullPreviewEpoch.current
+    void previewImageFull(
+      path,
+      removeOptions(mode, color, tolerance, feather),
+    )
+      .then((fullPath) => {
+        if (epoch !== fullPreviewEpoch.current) return
+        setFullPreviews((current) => ({ ...current, [path]: fullPath }))
+      })
+      .catch(() => {
+        // 保留已有的列表缩略图作为回退
+      })
+      .finally(() => {
+        fullPreviewLoading.current.delete(path)
+      })
+  }
+  const openInputLightbox = (path: string) => {
+    setHover(null)
+    setLightbox({ kind: 'input', index: Math.max(0, inputs.indexOf(path)) })
+  }
+  const openResultLightbox = (path: string) => {
+    const index = resultLightboxPaths.indexOf(path)
+    if (index < 0) return
+    setHover(null)
+    setLightbox({ kind: 'result', index })
+    loadFullPreview(path)
+  }
+  const hoverLeft = hover
+    ? Math.min(hover.x + 16, Math.max(16, window.innerWidth - 330))
+    : 0
+  const hoverTop = hover
+    ? Math.min(hover.y + 18, Math.max(16, window.innerHeight - 300))
+    : 0
 
   return (
     <div className="tool-page image-png-page">
@@ -409,75 +522,19 @@ export default function ImageToPngPage() {
 
       <div className="image-png-layout">
         <div className="image-png-left">
-          <section className="image-png-preview-panel">
-            <header className="image-png-preview-head">
+          <section className="image-png-panel">
+            <header className="image-png-panel-head">
               <div>
-                <span className="panel-kicker">预览</span>
-                <h2>{selected ? fileName(selected) : '等待选择图片'}</h2>
-              </div>
-              <div className="image-png-preview-actions">
-                <button
-                  type="button"
-                  className={`text-button ${showOriginal ? 'is-active' : ''}`}
-                  onClick={() => setShowOriginal(true)}
-                  disabled={!selected}
-                >
-                  <Eye size={13} />
-                  原图
-                </button>
-                <button
-                  type="button"
-                  className={`text-button ${!showOriginal ? 'is-active' : ''}`}
-                  onClick={() => setShowOriginal(false)}
-                  disabled={!selected}
-                >
-                  处理结果
-                </button>
-              </div>
-            </header>
-
-            <div className="image-png-stage">
-              {selectedPreview ? (
-                <ImagePreview src={selectedPreview} alt="图片预览" />
-              ) : (
-                <div className="image-png-stage-empty">
-                  <ImagePlus size={25} />
-                  <p>添加图片后在这里查看透明背景预览</p>
-                </div>
-              )}
-              {previewBusy ? (
-                <span className="image-png-preview-busy">
-                  <LoaderCircle size={14} className="spin" />
-                  更新预览
+                <span className="panel-kicker">
+                  {activeTab === 'input' ? '输入' : '预览'}
                 </span>
-              ) : null}
-            </div>
-
-            <footer className="image-png-preview-foot">
-              <span>
-                {analysis
-                  ? `原图 ${analysis.width} × ${analysis.height}`
-                  : '支持 PNG / JPG / WebP / BMP'}
-              </span>
-              <span>
-                {preview && !showOriginal
-                  ? `预览 ${preview.width} × ${preview.height}`
-                  : '棋盘格表示透明区域'}
-              </span>
-            </footer>
-          </section>
-
-          <section className="image-png-input-panel">
-            <header className="image-png-input-head">
-              <div>
-                <span className="panel-kicker">批量</span>
-                <h2>待转换图片</h2>
+                <h2>{activeTab === 'input' ? '已选图片' : '处理结果'}</h2>
               </div>
-              <div className="image-png-input-actions">
-                <button type="button" className="text-button" onClick={handleAddImages}>
+              <div className="image-png-panel-actions">
+                <button type="button" className="text-button" onClick={() => void handleAddImages()}>
                   添加图片
                 </button>
-                <button type="button" className="text-button" onClick={handleAddFolders}>
+                <button type="button" className="text-button" onClick={() => void handleAddFolders()}>
                   添加文件夹
                 </button>
                 {inputs.length > 0 ? (
@@ -489,54 +546,154 @@ export default function ImageToPngPage() {
               </div>
             </header>
 
-            {inputs.length === 0 ? (
-              <div className="image-png-input-empty">
-                <button type="button" className="btn btn-primary" onClick={handleAddImages}>
-                  <ImagePlus size={17} />
-                  选择图片
-                </button>
-                <button type="button" className="btn btn-secondary" onClick={handleAddFolders}>
-                  <FolderInput size={17} />
-                  选择文件夹
-                </button>
-                <p>也可以直接拖入图片或文件夹</p>
-              </div>
-            ) : (
-              <div className="image-png-input-grid">
-                {inputs.map((path) => {
-                  const image = isImagePath(path)
-                  const active = selected === path
-                  return (
+            <div className="image-png-tabs" role="tablist" aria-label="图片列表">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeTab === 'input'}
+                className={activeTab === 'input' ? 'is-active' : ''}
+                onClick={() => setActiveTab('input')}
+              >
+                已选图片 <span>{inputs.length}</span>
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeTab === 'result'}
+                className={activeTab === 'result' ? 'is-active' : ''}
+                onClick={() => setActiveTab('result')}
+              >
+                处理结果{' '}
+                <span>
+                  {previewBusy
+                    ? `${previewCount}/${previewTotal}`
+                    : previewCount}
+                </span>
+              </button>
+            </div>
+
+            {activeTab === 'input' ? (
+              inputs.length === 0 ? (
+                <div className="image-png-empty">
+                  <span className="image-png-empty-icon">
+                    <ImagePlus size={24} />
+                  </span>
+                  <h3>选择要转换的图片</h3>
+                  <p>可以选多张图片，也可以选文件夹递归展开其中的图片。</p>
+                  <div className="image-png-empty-actions">
+                    <button type="button" className="btn btn-primary" onClick={() => void handleAddImages()}>
+                      <ImagePlus size={17} />
+                      选择图片
+                    </button>
+                    <button type="button" className="btn btn-secondary" onClick={() => void handleAddFolders()}>
+                      <FolderInput size={17} />
+                      选择文件夹
+                    </button>
+                  </div>
+                  <span className="image-png-hint">支持 PNG / JPG / WebP / BMP / GIF</span>
+                </div>
+              ) : (
+                <div className="image-png-grid">
+                  {inputs.map((path) => (
                     <div
-                      className={`image-png-input-card ${active ? 'is-active' : ''}`}
+                      className="image-png-card"
                       key={path}
+                      onMouseEnter={(event) =>
+                        showHover(event, convertFileSrc(path), fileName(path))
+                      }
+                      onMouseMove={moveHover}
+                      onMouseLeave={() => setHover(null)}
                     >
-                      <button
-                        type="button"
-                        className="image-png-input-select"
-                        onClick={() => {
-                          if (image) setSelected(path)
+                      <span
+                        className="image-png-media"
+                        role="button"
+                        tabIndex={0}
+                        title={`查看 ${fileName(path)} 大图`}
+                        onClick={() => openInputLightbox(path)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault()
+                            openInputLightbox(path)
+                          }
                         }}
-                        disabled={!image}
-                        title={image ? '点击预览' : '文件夹会在转换时递归处理'}
                       >
-                        <span className="image-png-input-thumb">
-                          {image ? (
-                            <img src={convertFileSrc(path)} alt="" />
-                          ) : (
-                            <FolderInput size={20} />
-                          )}
-                        </span>
-                        <span className="image-png-input-name">{fileName(path)}</span>
-                      </button>
+                        <img src={convertFileSrc(path)} alt="" />
+                      </span>
+                      <span className="image-png-name" title={path}>
+                        {fileName(path)}
+                      </span>
                       <button
                         type="button"
-                        className="image-png-input-remove"
+                        className="image-png-remove"
                         aria-label={`移除 ${fileName(path)}`}
                         onClick={() => handleRemove(path)}
                       >
                         <X size={11} />
                       </button>
+                    </div>
+                  ))}
+                </div>
+              )
+            ) : inputs.length === 0 ? (
+              <div className="image-png-result-empty">
+                <span className="image-png-empty-icon">
+                  <ImagePlus size={22} />
+                </span>
+                <p>添加图片后，这里会显示按当前参数处理的透明 PNG 缩略图。</p>
+              </div>
+            ) : (
+              <div className="image-png-grid is-result">
+                {inputs.map((path) => {
+                  const item = previews[path]
+                  return (
+                    <div className="image-png-card is-result" key={path}>
+                      <span
+                        className="image-png-media is-checker"
+                        role={item?.previewPath ? 'button' : undefined}
+                        tabIndex={item?.previewPath ? 0 : undefined}
+                        title={item?.previewPath ? `查看 ${fileName(path)} 大图` : undefined}
+                        onMouseEnter={(event) => {
+                          if (item?.previewPath) {
+                            showHover(
+                              event,
+                              convertFileSrc(item.previewPath),
+                              fileName(path),
+                            )
+                          }
+                        }}
+                        onMouseMove={moveHover}
+                        onMouseLeave={() => setHover(null)}
+                        onClick={() => {
+                          if (item?.previewPath) openResultLightbox(path)
+                        }}
+                        onKeyDown={(event) => {
+                          if (
+                            item?.previewPath &&
+                            (event.key === 'Enter' || event.key === ' ')
+                          ) {
+                            event.preventDefault()
+                            openResultLightbox(path)
+                          }
+                        }}
+                      >
+                        {item?.previewPath ? (
+                          <img src={convertFileSrc(item.previewPath)} alt="" />
+                        ) : item?.error ? (
+                          <span className="image-png-preview-error" title={item.error}>
+                            <AlertTriangle size={18} />
+                          </span>
+                        ) : (
+                          <span className="image-png-preview-loading">
+                            <LoaderCircle size={16} className="spin" />
+                          </span>
+                        )}
+                      </span>
+                      <span className="image-png-name" title={path}>
+                        {fileName(path)}
+                      </span>
+                      {item?.background ? (
+                        <span className="image-png-bg">{item.background.hex}</span>
+                      ) : null}
                     </div>
                   )
                 })}
@@ -546,17 +703,16 @@ export default function ImageToPngPage() {
         </div>
 
         <aside className="image-png-settings">
-          <section className="image-png-settings-card">
+          <section className="image-png-settings-card is-background">
             <header className="image-png-settings-head">
               <div>
                 <span className="panel-kicker">背景</span>
                 <h2>背景颜色</h2>
               </div>
-              {preview ? (
-                <span className="count-chip">{preview.background.hex}</span>
-              ) : null}
+              {analysis ? <span className="count-chip">首张图</span> : null}
             </header>
 
+            <div className="image-png-settings-body">
             <div className="image-png-mode-switch">
               <button
                 type="button"
@@ -610,7 +766,7 @@ export default function ImageToPngPage() {
                     })}
                   </div>
                 ) : (
-                  <p className="field-hint">添加图片后会自动提取边缘候选色。</p>
+                  <p className="field-hint">添加图片后会自动提取首张图片的边缘候选色。</p>
                 )}
 
                 <label className="image-png-color-custom">
@@ -671,9 +827,10 @@ export default function ImageToPngPage() {
               />
               <p className="field-hint">数值越大，边缘过渡越柔和。</p>
             </div>
+            </div>
           </section>
 
-          <section className="image-png-settings-card">
+          <section className="image-png-settings-card is-output">
             <header className="image-png-settings-head">
               <div>
                 <span className="panel-kicker">输出</span>
@@ -704,9 +861,7 @@ export default function ImageToPngPage() {
               <Download size={17} />
               {job?.running ? '正在转换…' : '开始转换'}
             </button>
-            <p className="field-hint">
-              输出同名 PNG；重名会自动编号，不覆盖原文件。
-            </p>
+            <p className="field-hint">输出同名 PNG；重名会自动编号，不覆盖原文件。</p>
           </section>
         </aside>
       </div>
@@ -763,16 +918,37 @@ export default function ImageToPngPage() {
                     ))}
                 </ul>
               ) : null}
-              <button
-                type="button"
-                className="text-button"
-                onClick={handleOpenOutput}
-              >
+              <button type="button" className="text-button" onClick={handleOpenOutput}>
                 打开输出目录
               </button>
             </>
           ) : null}
         </section>
+      ) : null}
+
+      {lightbox ? (
+        <ImageLightbox
+          items={
+            lightbox.kind === 'input' ? inputLightboxItems : resultLightboxItems
+          }
+          initialIndex={lightbox.index}
+          onClose={() => setLightbox(null)}
+          onIndexChange={(index) => {
+            if (lightbox.kind !== 'result') return
+            const path = resultLightboxPaths[index]
+            if (path) loadFullPreview(path)
+          }}
+        />
+      ) : null}
+
+      {hover ? (
+        <div
+          className="image-png-hover"
+          style={{ left: hoverLeft, top: hoverTop }}
+        >
+          <img src={hover.src} alt="" />
+          <span>{hover.name}</span>
+        </div>
       ) : null}
 
       {dragging ? (
@@ -781,4 +957,3 @@ export default function ImageToPngPage() {
     </div>
   )
 }
-

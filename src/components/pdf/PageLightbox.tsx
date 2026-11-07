@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import {
+  Check,
   ChevronLeft,
   ChevronRight,
   FileWarning,
@@ -13,6 +14,9 @@ interface PageLightboxProps {
   initialPage: number;
   pageCount: number;
   onClose: () => void;
+  selectable?: boolean;
+  selectedPages?: ReadonlySet<number>;
+  onTogglePage?: (pageNumber: number) => void;
 }
 
 type RenderState = "rendering" | "done" | "error";
@@ -22,11 +26,15 @@ export function PageLightbox({
   initialPage,
   pageCount,
   onClose,
+  selectable = false,
+  selectedPages,
+  onTogglePage,
 }: PageLightboxProps) {
   const [pageNumber, setPageNumber] = useState(initialPage);
   const [renderState, setRenderState] = useState<RenderState>("rendering");
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
+  const selected = selectedPages?.has(pageNumber) ?? false;
 
   useEffect(() => {
     closeRef.current?.focus();
@@ -136,6 +144,17 @@ export function PageLightbox({
             <h2 id="lightbox-title">第 {pageNumber} 页</h2>
           </div>
           <div className="page-lightbox-head-actions">
+            {selectable ? (
+              <button
+                type="button"
+                className={`page-lightbox-select ${selected ? "is-checked" : ""}`}
+                aria-pressed={selected}
+                onClick={() => onTogglePage?.(pageNumber)}
+              >
+                {selected ? <Check size={14} strokeWidth={3} /> : null}
+                {selected ? "已选中" : "选中此页"}
+              </button>
+            ) : null}
             <span className="page-lightbox-count">
               {pageNumber} / {pageCount}
             </span>

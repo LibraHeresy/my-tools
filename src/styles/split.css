@@ -406,13 +406,13 @@
 }
 
 .split-workspace {
-  --panel-max-height: calc(100vh - 190px);
-  --preview-scroll-max: calc(100vh - 300px);
-  --settings-body-max: calc(100vh - 340px);
+  --settings-body-max: calc(100vh - 360px);
   display: grid;
   grid-template-columns: minmax(0, 1fr) clamp(300px, 23vw, 360px);
   gap: 18px;
   align-items: start;
+  width: 100%;
+  min-width: 0;
   margin-top: 15px;
 }
 .split-workspace.is-busy {
@@ -423,10 +423,15 @@
 .preview-panel {
   display: flex;
   flex-direction: column;
+  width: min(
+    100%,
+    max(280px, calc(var(--preview-columns, 6) * 212px + 16px))
+  );
   min-width: 0;
   height: auto;
-  max-height: var(--panel-max-height);
-  overflow: hidden;
+  max-height: none;
+  overflow: visible;
+  justify-self: start;
   border: 1px solid var(--line);
   border-radius: 20px;
   background: rgba(255, 253, 248, 0.8);
@@ -458,27 +463,25 @@
 }
 
 .preview-scroll {
-  flex: 0 1 auto;
+  flex: none;
   min-height: 0;
-  max-height: var(--preview-scroll-max);
+  max-height: none;
   padding: 14px;
-  overflow-y: auto;
+  overflow: visible;
 }
 
 .page-grid {
-  display: flex;
-  flex-wrap: wrap;
-  align-content: flex-start;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 200px));
   justify-content: center;
   gap: 15px 12px;
+  align-content: start;
 }
 
 .page-thumb {
   display: flex;
-  flex: 1 1 140px;
   flex-direction: column;
   gap: 5px;
-  max-width: 320px;
   min-width: 0;
   margin: 0;
 }
@@ -581,12 +584,15 @@
 
 .settings-panel {
   position: sticky;
+  z-index: auto;
   top: 16px;
-  align-self: start;
+  right: auto;
   display: flex;
+  width: auto;
+  max-height: calc(100vh - 32px);
   flex-direction: column;
+  align-self: start;
   height: auto;
-  max-height: var(--panel-max-height);
   padding: 0;
   overflow: hidden;
   border: 1px solid var(--line);
@@ -1345,12 +1351,14 @@
 
 .page-select-indicator {
   position: absolute;
+  z-index: 2;
   top: 5px;
   left: 5px;
   display: grid;
   place-items: center;
   width: 18px;
   height: 18px;
+  padding: 0;
   color: transparent;
   border: 1px solid rgba(255, 253, 248, 0.9);
   border-radius: 50%;
@@ -1362,39 +1370,14 @@
     border-color 0.15s ease;
 }
 
+.page-select-indicator:hover {
+  color: #fffaf3;
+  background: rgba(34, 31, 26, 0.56);
+}
+
 .page-select-indicator.is-checked {
   color: #fffaf3;
   border-color: var(--accent);
-  background: var(--accent);
-}
-
-.page-zoom-button {
-  position: absolute;
-  top: 5px;
-  right: 5px;
-  display: grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  color: #fffaf3;
-  border: 0;
-  border-radius: 5px;
-  background: rgba(34, 31, 26, 0.58);
-  opacity: 0;
-  pointer-events: none;
-  transition:
-    opacity 0.15s ease,
-    background 0.15s ease;
-}
-
-.page-thumb-frame:hover .page-zoom-button,
-.page-zoom-button:focus-visible {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.page-zoom-button:hover {
   background: var(--accent);
 }
 
@@ -1406,25 +1389,86 @@
 .page-hover-preview {
   position: fixed;
   z-index: 90;
-  width: 300px;
-  max-height: 440px;
-  padding: 6px;
+  width: min(450px, calc(100vw - 32px));
+  max-height: min(660px, calc(100vh - 32px));
+  padding: 8px;
   overflow: hidden;
-  pointer-events: none;
+  pointer-events: auto;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 14px;
   background: var(--surface);
   box-shadow: 0 20px 45px rgba(35, 22, 12, 0.24);
   animation: rise 0.15s ease both;
 }
 
-.page-hover-preview img {
-  display: block;
-  width: 100%;
-  max-height: 426px;
-  object-fit: contain;
-  border-radius: 5px;
+.page-hover-canvas-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 180px;
+  max-height: calc(min(660px, 100vh - 32px) - 16px);
+  overflow: hidden;
+  border-radius: 8px;
   background: #fffdf8;
+}
+
+.page-hover-canvas {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: calc(min(660px, 100vh - 32px) - 16px);
+  object-fit: contain;
+  border-radius: 8px;
+  background: #fffdf8;
+}
+
+.page-hover-placeholder {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+
+.page-hover-select {
+  position: absolute;
+  z-index: 2;
+  top: 14px;
+  left: 14px;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.75);
+  border-radius: 50%;
+  background: rgba(34, 31, 26, 0.48);
+  box-shadow: 0 2px 8px rgba(25, 18, 10, 0.2);
+}
+
+.page-hover-select:hover {
+  background: rgba(34, 31, 26, 0.7);
+}
+
+.page-hover-select.is-checked {
+  color: #fff;
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.page-hover-label {
+  position: absolute;
+  left: 14px;
+  bottom: 14px;
+  padding: 3px 8px;
+  color: #fff;
+  font-size: var(--text-micro);
+  border-radius: 6px;
+  background: rgba(34, 31, 26, 0.58);
+  pointer-events: none;
 }
 
 .selection-input-head {
@@ -1505,6 +1549,32 @@
 .page-lightbox-count {
   color: var(--faint);
   font-size: var(--text-small);
+}
+
+.page-lightbox-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 10px;
+  color: var(--muted);
+  font-size: var(--text-small);
+  font-weight: 600;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface-muted);
+}
+
+.page-lightbox-select:hover {
+  color: var(--accent-deep);
+  border-color: rgba(216, 74, 47, 0.3);
+  background: var(--accent-wash);
+}
+
+.page-lightbox-select.is-checked {
+  color: var(--accent-deep);
+  border-color: rgba(216, 74, 47, 0.36);
+  background: var(--accent-wash);
 }
 
 .page-lightbox-stage {
@@ -1600,15 +1670,10 @@
     grid-template-columns: 1fr;
   }
 
-  .preview-panel,
   .settings-panel {
     position: static;
     height: auto;
     max-height: none;
-  }
-
-  .preview-scroll {
-    max-height: 460px;
   }
 
   .settings-body {
@@ -1621,10 +1686,17 @@
 }
 
 @media (max-height: 720px) {
-  .split-workspace {
-    --panel-max-height: calc(100vh - 150px);
-    --preview-scroll-max: calc(100vh - 250px);
-    --settings-body-max: calc(100vh - 290px);
+  .settings-panel {
+    max-height: calc(100vh - 32px);
+  }
+
+  .preview-scroll {
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+
+  .settings-body {
+    max-height: calc(100vh - 360px);
   }
 
   .dropzone {

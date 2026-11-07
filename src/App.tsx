@@ -39,7 +39,15 @@ export default function App() {
   const ToolPage = tool ? toolPages[tool.route] : undefined;
   const isHome = route === "/";
   const isAssetTool =
-    tool?.id === "sprite-slicer" || tool?.id === "image-to-png";
+    tool?.id === "sprite-slice" ||
+    tool?.id === "sprite-pack" ||
+    tool?.id === "image-to-png";
+
+  useEffect(() => {
+    if (route === "/tools/sprite-slicer") {
+      navigate("/tools/sprite-slice");
+    }
+  }, [navigate, route]);
 
   const showToast = useCallback((message: string, tone: ToastTone = "info") => {
     if (toastTimerRef.current !== null) {

@@ -33,6 +33,26 @@ export interface PreviewResult {
   background: BackgroundColor
 }
 
+export interface BatchPreviewItem {
+  index: number
+  sourcePath: string
+  fileName: string
+  previewPath: string | null
+  background: BackgroundColor | null
+  error: string | null
+}
+
+export interface BatchPreviewProgress {
+  requestId: string
+  total: number
+  item: BatchPreviewItem
+}
+
+export interface BatchPreviewDone {
+  requestId: string
+  total: number
+}
+
 export interface ConvertFileReport {
   name: string
   path: string

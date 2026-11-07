@@ -1,15 +1,20 @@
 import { invoke } from '@tauri-apps/api/core'
-import type {
-  ImageAnalysis,
-  PreviewResult,
-  RemoveOptions,
-} from './types'
+import type { ImageAnalysis, RemoveOptions } from './types'
 
 export const analyzeImage = (path: string) =>
   invoke<ImageAnalysis>('analyze_image', { path })
 
-export const previewImage = (path: string, options: RemoveOptions) =>
-  invoke<PreviewResult>('preview_image', { path, options })
+export const listImages = (inputs: string[]) =>
+  invoke<string[]>('list_images', { inputs })
+
+export const previewImages = (
+  requestId: string,
+  inputs: string[],
+  options: RemoveOptions,
+) => invoke<void>('preview_images', { requestId, inputs, options })
+
+export const previewImageFull = (path: string, options: RemoveOptions) =>
+  invoke<string>('preview_image_full', { path, options })
 
 export const convertImages = (
   inputs: string[],
@@ -17,4 +22,9 @@ export const convertImages = (
   options: RemoveOptions,
 ) => invoke<void>('convert_images', { inputs, outDir, options })
 
-export type { ConvertReport, ConvertProgress } from './types'
+export type {
+  BatchPreviewDone,
+  BatchPreviewProgress,
+  ConvertReport,
+  ConvertProgress,
+} from './types'

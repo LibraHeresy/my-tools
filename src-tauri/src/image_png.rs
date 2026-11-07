@@ -7,8 +7,10 @@ use image::{ImageFormat, ImageReader, RgbaImage};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::Instant;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, State};
 
 const IMAGE_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "webp", "bmp", "gif"];
 
@@ -66,6 +68,37 @@ pub struct PreviewResult {
     pub original_width: u32,
     pub original_height: u32,
     pub background: BackgroundColor,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BatchPreviewItem {
+    pub index: usize,
+    pub source_path: String,
+    pub file_name: String,
+    pub preview_path: Option<String>,
+    pub background: Option<BackgroundColor>,
+    pub error: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BatchPreviewProgress {
+    request_id: String,
+    total: usize,
+    item: BatchPreviewItem,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BatchPreviewDone {
+    request_id: String,
+    total: usize,
+}
+
+#[derive(Default)]
+pub struct PreviewState {
+    generation: Arc<AtomicU64>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -272,6 +305,27 @@ fn preview_file_path() -> PathBuf {
     ))
 }
 
+fn clear_preview_files() {
+    let temp = std::env::temp_dir();
+    let Ok(entries) = std::fs::read_dir(&temp) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name.starts_with("pdf-workbench-image-preview-") {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
+}
+
+fn batch_preview_path(batch: &str, index: usize) -> PathBuf {
+    std::env::temp_dir().join(format!(
+        "pdf-workbench-image-preview-{}-{}-{index}.png",
+        std::process::id(),
+        batch
+    ))
+}
+
 fn remove_background(
     img: &mut RgbaImage,
     options: &RemoveOptions,
@@ -337,6 +391,151 @@ pub async fn preview_image(path: String, options: RemoveOptions) -> Result<Previ
     .map_err(|e| format!("预览任务失败：{e}"))?
 }
 
+fn full_preview_path() -> PathBuf {
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or(0);
+    std::env::temp_dir().join(format!(
+        "pdf-workbench-image-full-{}-{stamp}.png",
+        std::process::id()
+    ))
+}
+
+#[tauri::command]
+pub async fn preview_image_full(
+    path: String,
+    options: RemoveOptions,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut img = load_rgba(Path::new(&path))?;
+        let background = background_for(&img, &options);
+        apply_transparency(&mut img, &background, options.tolerance, options.feather);
+        let (ow, oh) = img.dimensions();
+        let scale = (1600.0 / ow.max(1) as f32)
+            .min(1600.0 / oh.max(1) as f32)
+            .min(1.0);
+        let width = (ow as f32 * scale).round().max(1.0) as u32;
+        let height = (oh as f32 * scale).round().max(1.0) as u32;
+        let preview = image::imageops::resize(
+            &img,
+            width,
+            height,
+            image::imageops::FilterType::Lanczos3,
+        );
+        let out = full_preview_path();
+        preview
+            .save_with_format(&out, ImageFormat::Png)
+            .map_err(|e| format!("无法写入大图预览：{e}"))?;
+        Ok(out.to_string_lossy().to_string())
+    })
+    .await
+    .map_err(|e| format!("大图预览任务失败：{e}"))?
+}
+
+fn batch_preview_item(
+    index: usize,
+    path: &Path,
+    options: &RemoveOptions,
+    batch: &str,
+) -> BatchPreviewItem {
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("image")
+        .to_string();
+    let source_path = path.to_string_lossy().to_string();
+
+    let result = (|| -> Result<(PathBuf, BackgroundColor), String> {
+        let mut img = load_rgba(path)?;
+        let background = remove_background(&mut img, options);
+        let (ow, oh) = img.dimensions();
+        let scale = (480.0 / ow.max(1) as f32)
+            .min(480.0 / oh.max(1) as f32)
+            .min(1.0);
+        let width = (ow as f32 * scale).round().max(1.0) as u32;
+        let height = (oh as f32 * scale).round().max(1.0) as u32;
+        let preview = image::imageops::resize(
+            &img,
+            width,
+            height,
+            image::imageops::FilterType::Lanczos3,
+        );
+        let preview_path = batch_preview_path(batch, index);
+        preview
+            .save_with_format(&preview_path, ImageFormat::Png)
+            .map_err(|e| format!("无法写入预览：{e}"))?;
+        Ok((preview_path, background))
+    })();
+
+    match result {
+        Ok((preview_path, background)) => BatchPreviewItem {
+            index,
+            source_path,
+            file_name,
+            preview_path: Some(preview_path.to_string_lossy().to_string()),
+            background: Some(background),
+            error: None,
+        },
+        Err(error) => BatchPreviewItem {
+            index,
+            source_path,
+            file_name,
+            preview_path: None,
+            background: None,
+            error: Some(error),
+        },
+    }
+}
+
+#[tauri::command]
+pub fn preview_images(
+    app: AppHandle,
+    state: State<'_, PreviewState>,
+    request_id: String,
+    inputs: Vec<String>,
+    options: RemoveOptions,
+) {
+    let generation = state.generation.fetch_add(1, Ordering::SeqCst) + 1;
+    let generation_slot = Arc::clone(&state.generation);
+
+    std::thread::spawn(move || {
+        clear_preview_files();
+        let mut paths = Vec::new();
+        let mut seen = HashSet::new();
+        for input in &inputs {
+            collect_images(Path::new(input), &mut paths, &mut seen);
+        }
+        let total = paths.len();
+        let batch = format!("{generation}");
+
+        for (index, path) in paths.iter().enumerate() {
+            if generation_slot.load(Ordering::SeqCst) != generation {
+                return;
+            }
+            let item = batch_preview_item(index, path, &options, &batch);
+            let _ = app.emit(
+                "image-preview",
+                BatchPreviewProgress {
+                    request_id: request_id.clone(),
+                    total,
+                    item,
+                },
+            );
+        }
+
+        if generation_slot.load(Ordering::SeqCst) == generation {
+            let _ = app.emit(
+                "image-preview-done",
+                BatchPreviewDone {
+                    request_id,
+                    total,
+                },
+            );
+        }
+    });
+}
+
 fn unique_output_path(out_dir: &Path, stem: &str, used: &mut HashSet<String>) -> PathBuf {
     let mut index = 0usize;
     loop {
@@ -385,6 +584,19 @@ fn convert_one(
         elapsed_ms: started.elapsed().as_millis(),
         error: None,
     })
+}
+
+#[tauri::command]
+pub fn list_images(inputs: Vec<String>) -> Vec<String> {
+    let mut paths = Vec::new();
+    let mut seen = HashSet::new();
+    for input in &inputs {
+        collect_images(Path::new(input), &mut paths, &mut seen);
+    }
+    paths
+        .into_iter()
+        .map(|path| path.to_string_lossy().to_string())
+        .collect()
 }
 
 #[tauri::command]
