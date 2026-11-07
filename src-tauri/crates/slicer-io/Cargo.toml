@@ -1,0 +1,16 @@
+[package]
+name = "slicer-io"
+version = "0.1.0"
+edition = "2021"
+description = "解码 / 检测 / 导出 / 批量的共享实现，供 GUI 与 CLI 复用"
+license = "MIT"
+
+[dependencies]
+# 算法层：零依赖、无 I/O
+slicer-core = { path = "../slicer-core" }
+
+# 只在这里出现 PNG 编解码。slicer-core 永远不碰 I/O，这正是它能被编成 WASM 的原因。
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

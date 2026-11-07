@@ -1,0 +1,12 @@
+[package]
+name = "slicer-core"
+version = "0.1.0"
+edition = "2021"
+description = "Alpha-based sprite sheet segmentation core (zero dependencies)"
+license = "MIT"
+
+# 刻意保持零依赖：
+# 1) 可以在完全离线的情况下构建与测试
+# 2) 后续可直接用 wasm-bindgen 编成 WASM 给网页版复用
+# 3) PNG 解码等 I/O 职责留给上层（Tauri 用 image crate，网页用 createImageBitmap）
+[dependencies]
