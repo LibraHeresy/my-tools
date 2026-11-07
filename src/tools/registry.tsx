@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import type { ToolManifest } from "./types";
 import { splitPdfTool } from "./split-pdf/manifest";
+import { imageToPngTool } from "./image-to-png/manifest";
 import { spriteSlicerTool } from "./sprite-slicer/manifest";
 
 const plannedTools: ToolManifest[] = [
@@ -72,6 +73,7 @@ const plannedTools: ToolManifest[] = [
 export const allTools: ToolManifest[] = [
   splitPdfTool,
   spriteSlicerTool,
+  imageToPngTool,
   ...plannedTools,
 ].sort((a, b) => a.order - b.order);
 
@@ -89,6 +91,7 @@ export const toolPages: Record<
 > = {
   [splitPdfTool.route]: lazy(() => import("./split-pdf/SplitPdfPage")),
   [spriteSlicerTool.route]: lazy(() => import("./sprite-slicer/SpritePage")),
+  [imageToPngTool.route]: lazy(() => import("./image-to-png/ImageToPngPage")),
 };
 
 export function getToolByRoute(route: string): ToolManifest | undefined {

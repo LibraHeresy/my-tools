@@ -38,7 +38,8 @@ export default function App() {
   const tool = getToolByRoute(route);
   const ToolPage = tool ? toolPages[tool.route] : undefined;
   const isHome = route === "/";
-  const isSpriteTool = tool?.id === "sprite-slicer";
+  const isAssetTool =
+    tool?.id === "sprite-slicer" || tool?.id === "image-to-png";
 
   const showToast = useCallback((message: string, tone: ToastTone = "info") => {
     if (toastTimerRef.current !== null) {
@@ -93,7 +94,7 @@ export default function App() {
   );
 
   useEffect(() => {
-    if (!isTauriRuntime() || isSpriteTool) {
+    if (!isTauriRuntime() || isAssetTool) {
       return;
     }
 
@@ -150,7 +151,7 @@ export default function App() {
       disposed = true;
       unlisten?.();
     };
-  }, [isSpriteTool, route, showToast]);
+  }, [isAssetTool, route, showToast]);
 
   const openDroppedWithTool = (toolRoute: string) => {
     if (!droppedPath) {

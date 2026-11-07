@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use tauri_plugin_fs::FsExt;
 
+mod image_png;
 mod sprite;
 
 #[derive(Serialize)]
@@ -102,6 +103,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             prepare_import,
             open_folder,
+            image_png::analyze_image,
+            image_png::preview_image,
+            image_png::convert_images,
             sprite::commands::open_sheet,
             sprite::commands::detect_sprites,
             sprite::export::export_sprites,

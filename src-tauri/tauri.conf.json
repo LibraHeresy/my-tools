@@ -36,7 +36,7 @@
     "active": true,
     "targets": ["msi"],
     "shortDescription": "轻量、纯本地的 PDF 工具台",
-    "longDescription": "所有文件都在本机处理，不上传、不联网。支持 PDF 拆分，以及精灵图集切图和打包。",
+    "longDescription": "所有文件都在本机处理，不上传、不联网。支持 PDF 拆分、精灵图集切图和打包，以及批量图片转透明 PNG。",
     "copyright": "Copyright © 2026",
     "category": "Utility",
     "icon": [

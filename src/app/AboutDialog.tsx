@@ -78,7 +78,7 @@ export function AboutDialog({ open, onClose }: AboutDialogProps) {
           </div>
           <div>
             <span>当前能力</span>
-            <strong>PDF 拆分 · 精灵图</strong>
+            <strong>PDF 拆分 · 精灵图 · 图片转 PNG</strong>
           </div>
           <div>
             <span>应用框架</span>
