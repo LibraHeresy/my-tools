@@ -7,6 +7,8 @@ import {
 } from "react";
 import { ArrowRight, FileUp, ShieldCheck } from "lucide-react";
 import { AboutDialog } from "./app/AboutDialog";
+import { UpdateDialog } from "./app/UpdateDialog";
+import { useUpdater } from "./app/useUpdater";
 import { AppShell } from "./app/AppShell";
 import { ToolLaunchContext, type PendingImport } from "./app/LaunchContext";
 import { Toast, type ToastData, type ToastTone } from "./components/Toast";
@@ -27,6 +29,7 @@ function isPdfPath(path: string): boolean {
 
 export default function App() {
   const { route, navigate } = useHashRoute();
+  const updater = useUpdater();
   const [aboutOpen, setAboutOpen] = useState(false);
   const [pendingImport, setPendingImport] = useState<PendingImport | null>(null);
   const [droppedPath, setDroppedPath] = useState<string | null>(null);
@@ -213,7 +216,25 @@ export default function App() {
         )}
       </AppShell>
 
-      <AboutDialog open={aboutOpen} onClose={() => setAboutOpen(false)} />
+      <AboutDialog
+        open={aboutOpen}
+        onClose={() => setAboutOpen(false)}
+        onCheckUpdate={() => {
+          setAboutOpen(false);
+          void updater.checkForUpdates(true);
+        }}
+      />
+
+      <UpdateDialog
+        open={updater.open}
+        phase={updater.phase}
+        update={updater.update}
+        progress={updater.progress}
+        error={updater.error}
+        onInstall={() => void updater.install()}
+        onRetry={() => void updater.checkForUpdates(true)}
+        onClose={updater.closeDialog}
+      />
 
       {dragging ? (
         <div className="drag-overlay" aria-hidden="true">

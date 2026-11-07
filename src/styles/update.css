@@ -1,0 +1,196 @@
+.update-backdrop {
+  position: fixed;
+  z-index: 210;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(28, 22, 16, 0.58);
+  backdrop-filter: blur(12px);
+  animation: rise 0.18s ease both;
+}
+
+.update-dialog {
+  display: flex;
+  width: min(500px, 92vw);
+  max-height: 90vh;
+  flex-direction: column;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--surface);
+  box-shadow: 0 30px 90px rgba(25, 16, 9, 0.35);
+  animation: soft-pop 0.22s ease both;
+}
+
+.update-dialog-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.update-dialog-icon {
+  display: grid;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  color: var(--muted);
+  border-radius: 10px;
+  background: var(--surface-muted);
+}
+
+.update-dialog-icon.is-ready {
+  color: var(--accent-deep);
+  background: var(--accent-wash);
+}
+
+.update-dialog-icon.is-error {
+  color: var(--accent-deep);
+  background: rgba(216, 74, 47, 0.1);
+}
+
+.update-dialog-title {
+  min-width: 0;
+  flex: 1;
+}
+
+.update-dialog-title h2 {
+  margin: 2px 0 0;
+  color: var(--ink);
+  font-size: var(--text-title);
+  font-weight: 670;
+  letter-spacing: -0.03em;
+}
+
+.update-dialog-head > .icon-button {
+  flex: 0 0 auto;
+}
+
+.update-version {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  margin: 14px 0 3px;
+  color: var(--muted);
+  font-size: var(--text-small);
+}
+
+.update-version strong {
+  color: var(--ink-soft);
+  font-weight: 660;
+}
+
+.update-version span {
+  color: var(--faint);
+}
+
+.update-date {
+  color: var(--faint);
+  font-size: var(--text-micro);
+}
+
+.update-notes {
+  max-height: 190px;
+  margin-top: 12px;
+  padding: 10px 11px;
+  overflow-y: auto;
+  color: var(--muted);
+  font-size: var(--text-small);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  border: 1px solid var(--line-soft);
+  border-radius: 9px;
+  background: var(--surface-muted);
+}
+
+.update-message {
+  margin: 15px 0 0;
+  color: var(--muted);
+  font-size: var(--text-small);
+  line-height: 1.6;
+}
+
+.update-message.is-error {
+  color: var(--accent-deep);
+}
+
+.update-hint {
+  margin: 8px 0 0;
+  color: var(--faint);
+  font-size: var(--text-micro);
+}
+
+.update-progress {
+  height: 7px;
+  margin-top: 12px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--line-soft);
+}
+
+.update-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 0.2s ease;
+}
+
+.update-progress.is-indeterminate span {
+  width: 35%;
+  animation: update-indeterminate 1.2s ease-in-out infinite;
+}
+
+.update-progress-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 6px;
+  color: var(--faint);
+  font-family: Consolas, Menlo, monospace;
+  font-size: var(--text-micro);
+}
+
+.update-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.update-actions .btn {
+  min-width: 104px;
+}
+
+@keyframes update-indeterminate {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(330%);
+  }
+}
+
+@media (max-width: 560px) {
+  .update-backdrop {
+    padding: 12px;
+  }
+
+  .update-dialog {
+    padding: 14px;
+  }
+
+  .update-actions {
+    flex-direction: column-reverse;
+  }
+
+  .update-actions .btn {
+    width: 100%;
+  }
+}

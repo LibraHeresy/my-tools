@@ -9,6 +9,8 @@
     "core:default",
     "dialog:allow-open",
     "fs:read-files",
-    "fs:write-files"
+    "fs:write-files",
+    "updater:default",
+    "process:default"
   ]
 }

@@ -68,7 +68,7 @@ export function AppShell({
           </div>
           <div>
             <strong>只在本机处理</strong>
-            <p>文件不会上传，也不会连接网络。</p>
+            <p>文件不会上传；联网仅用于检查更新。</p>
           </div>
         </div>
 
@@ -78,10 +78,10 @@ export function AppShell({
         </button>
 
         <div className="sidebar-meta">
-          <span>v0.7.0</span>
+          <span>v0.8.0</span>
           <span className="meta-separator" />
           <LockKeyhole size={12} />
-          <span>离线可用</span>
+          <span>本地处理</span>
         </div>
       </aside>
 

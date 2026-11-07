@@ -1,12 +1,13 @@
 import { useEffect, useRef } from "react";
-import { ShieldCheck, X } from "lucide-react";
+import { RefreshCw, ShieldCheck, X } from "lucide-react";
 
 interface AboutDialogProps {
   open: boolean;
   onClose: () => void;
+  onCheckUpdate: () => void;
 }
 
-export function AboutDialog({ open, onClose }: AboutDialogProps) {
+export function AboutDialog({ open, onClose, onCheckUpdate }: AboutDialogProps) {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -60,7 +61,7 @@ export function AboutDialog({ open, onClose }: AboutDialogProps) {
           <div>
             <span className="eyebrow">本地工具台</span>
             <h2 id="about-title">PDF 工具台</h2>
-            <p>版本 0.7.0 · Windows 桌面版</p>
+            <p>版本 0.8.0 · Windows 桌面版</p>
           </div>
         </div>
 
@@ -94,9 +95,19 @@ export function AboutDialog({ open, onClose }: AboutDialogProps) {
           后续会沿用工具注册表继续加入合并、提取页面、压缩等工具，所有工具共享同一套本地文件处理能力。
         </div>
 
-        <button type="button" className="btn btn-primary btn-block" onClick={onClose}>
-          知道了
-        </button>
+        <div className="about-actions">
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={onCheckUpdate}
+          >
+            <RefreshCw size={15} />
+            检查更新
+          </button>
+          <button type="button" className="btn btn-primary" onClick={onClose}>
+            知道了
+          </button>
+        </div>
       </div>
     </div>
   );

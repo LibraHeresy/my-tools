@@ -665,6 +665,18 @@ button.nav-item:hover {
   height: 44px;
 }
 
+.about-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.about-actions .btn {
+  height: 40px;
+}
+
 .tool-picker {
   width: min(470px, 100%);
   padding: 28px;

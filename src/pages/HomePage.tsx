@@ -164,9 +164,9 @@ export function HomePage({ tools, roadmap, onOpenTool }: HomePageProps) {
 
       <footer className="home-footer">
         <span className="footer-dot" />
-        <span>本地工具 · 无需登录 · 不连接网络</span>
+        <span>本地工具 · 无需登录 · 文件不上传</span>
         <span className="footer-spacer" />
-        <span>0.7.0</span>
+        <span>0.8.0</span>
       </footer>
     </div>
   );

@@ -54,3 +54,6 @@ Thumbs.db
 *.njsproj
 *.sln
 *.sw?
+
+# 本机更新签名私钥
+/.tauri/
