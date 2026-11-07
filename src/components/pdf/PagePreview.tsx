@@ -401,7 +401,7 @@ export function PagePreview({
     hoverCloseTimerRef.current = window.setTimeout(() => {
       setHoverPreview(null);
       hoverCloseTimerRef.current = null;
-    }, 140);
+    }, 0);
   };
 
   useEffect(() => {
@@ -465,11 +465,11 @@ export function PagePreview({
   return (
     <>
       <section
-        className="preview-panel"
+        className={`preview-panel ${pageCount >= 5 ? "is-wide" : ""}`}
         aria-labelledby="preview-title"
         style={
           {
-            "--preview-columns": Math.min(Math.max(pageCount, 1), 6),
+            "--preview-columns": Math.min(Math.max(pageCount, 1), 5),
           } as CSSProperties
         }
       >

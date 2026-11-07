@@ -425,7 +425,7 @@
   flex-direction: column;
   width: min(
     100%,
-    max(280px, calc(var(--preview-columns, 6) * 212px + 16px))
+    max(228px, calc(var(--preview-columns, 5) * 212px + 16px))
   );
   min-width: 0;
   height: auto;
@@ -436,6 +436,10 @@
   border-radius: 20px;
   background: rgba(255, 253, 248, 0.8);
   box-shadow: 0 9px 24px rgba(70, 49, 28, 0.035);
+}
+
+.preview-panel.is-wide {
+  width: 100%;
 }
 
 .preview-head {
@@ -472,7 +476,7 @@
 
 .page-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 200px));
+  grid-template-columns: repeat(var(--preview-columns, 5), minmax(0, 1fr));
   justify-content: center;
   gap: 15px 12px;
   align-content: start;
